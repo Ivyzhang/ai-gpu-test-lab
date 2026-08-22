@@ -1,0 +1,32 @@
+name: gpu-regression
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  cpu-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: pytest tests/ -m "not gpu"
+
+  gpu-full-suite:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, gpu]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ai-gpu-test-lab:ci .
+      - run: |
+          docker run --rm --gpus all -v "$PWD:/workspace" ai-gpu-test-lab:ci \
+            python scripts/run_suite.py --suite operator,triton,correctness,dynamic,negative,performance,soak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports/

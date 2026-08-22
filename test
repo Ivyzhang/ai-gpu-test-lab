@@ -1,0 +1,88 @@
+ 项目一：基于 pytest 的 TensorRT 加速算子精度对标与性能回归（Regression）评测平台1. 项目介绍在大模型（LLM）的工程化落地过程中，模型上线前必须通过模型编译器（如 TensorRT）实施优化（如算子融合、低比特量化 FP16/INT8）以压榨硬件算力。本项目是一个专为 NVIDIA GPU 算子级推理 打造的自动化 QA 评测平台，在底层硬件级上对加速算子开展精度、耗时和异常边界验证。2. 项目难点与解决的痛点痛点：模型经过 TensorRT 编译后结构被重组（算子融合、量化截断），传统的非黑即白断言（如 ==）在允许浮点误差的 AI 计算中完全失效；同时，GPU 的异步指令发射机制会导致常规 Python 计时器采集到虚假加速比。难点：异构运行时数据对准：如何在测试中消除硬件量化噪声，设置既严密又不会引发误报（False Positive）的动态数学容差阈值。显存泄漏防御：在 pytest 高并发、多批次循环测试下，传统 C 绑定库（如 pycuda）容易产生显存泄漏崩溃。3. 项目流程Fixture 固件生成：PyTorch 基础模型 \(\rightarrow \) 自动化导出 ONNX \(\rightarrow \) 调用 TRT Builder 编译为指定的 .engine 文件。数据流水线对齐：使用 PyTorch Allocator 在 GPU 预分配显存，通过 .data_ptr() 零拷贝（Zero-copy）透传给 TRT 执行器 execute_async_v3。异构双向比对（Differential Testing）：分别收集 CPU 金标准与 GPU 的计算矩阵。性能 Profiling：使用硬件事件计时器进行多轮 Warmup 压测，统计平均延迟（Latency）与标准差。拦截与清理：自动化断言精度与速度，清理临时网络图。4. 数据集与测试集准备黄金数据集（Golden Dataset）：不使用随机数，而是从真实业务（如 Llama-3 文本生成）中抓取 Token 嵌入矩阵（Embedding Matrix）和权重数据作为输入样本，其输出在 FP64（双精度）CPU 下离线落盘，作为数值绝对正确的“金标准”。测试集分类：冒烟/基础测试集：标称尺寸的经典对齐矩阵（如 \(1024 \times 1024\)，Batch=1），用于快速迭代验证。极端边界测试集：特意引入 非2的幂次（Non-power-of-two，如 4097） 和大模型长文本的 Dynamic Shapes。专门用来压测 TRT 的显存分配池（Workspace）边界，逼迫编译器进行底层矩阵填充（Padding）以拦截内存溢出。5. 项目核心骨架代码pythonimport pytest
+import torch
+import tensorrt as trt
+import numpy as np
+
+@pytest.fixture(scope="module")
+def compile_trt_engine():
+    # 模拟真实流水线：PyTorch -> ONNX -> TensorRT Engine (启用FP16)
+    # 返回编译好的引擎路径与原生 PyTorch 黄金模型引用
+    yield "mock_linear.engine", torch.nn.Linear(4096, 4096).cuda().half()
+
+@pytest.mark.parametrize("m, n, k", [(4096, 4096, 4096), (2048, 4097, 2048)])
+def test_trt_operator_quality_gate(m, n, k, compile_trt_engine):
+    engine_path, py_model = compile_trt_engine
+    # 1. 构造代表性输入数据
+    x_input = torch.randn(m, k, device="cuda", dtype=torch.float16)
+    
+    # 2. 运行 PyTorch 获得 Golden 基准
+    with torch.no_grad():
+        golden_out = py_model(x_input)
+    
+    # 3. 运行 Device Under Test (DUT: TensorRT 引擎)
+    # 利用 PyTorch 显存机制做 Zero-copy 透传给 TRT v10 异步接口
+    trt_out = torch.empty_like(golden_out)
+    # context.set_tensor_address("input", x_input.data_ptr()) 
+    # context.execute_async_v3(stream_handle)
+    
+    # 模拟 TRT 运算结果 (此处用 mock 代替)
+    trt_out = golden_out.clone() + 1e-4 
+
+    # 4. 硬核数学断言：全量元素数学对标 (英伟达 QA 标配公式)
+    torch.testing.assert_close(trt_out, golden_out, rtol=1e-3, atol=1e-3)
+
+    # 5. 消除异步发射干扰的硬件计时隔离 (Profiling)
+    start_evt = torch.cuda.Event(enable_timing=True)
+    end_evt = torch.cuda.Event(enable_timing=True)
+    
+    torch.cuda.synchronize() # 栅栏同步
+    start_evt.record()
+    # 循环 50 次执行算子推理...
+    end_evt.record()
+    torch.cuda.synchronize()
+    
+    latency = start_evt.elapsed_time(end_evt) / 50.0
+    assert latency < 3.0, f"性能回归：算子执行耗时超标！"
+Use code with caution.6. 测试怎么测（测试策略）精度测试：采用参数化矩阵，自动化轮询 FP32、FP16 和 INT8 校准模型，通过统计学误差模型判断元素的最大偏离量（Max Absolute Error）。性能回归测试：将每次跑出的 Latency 与历史 Baseline（存储在 JSON 或本地 DB 中）做动态对比，只要新版本算子耗时增加超过 5%，立即抛出错误拦截。7. 准入准出标准准入标准（Entry）：原生 PyTorch 模型功能在 CPU/GPU 运行完全正常，且 ONNX 结构通过合规性检查（无未知或不支持的自定义不兼容算子）。准出标准（Exit）：全因子测试矩阵用例 100% 通过，无 NaN 或 Inf 异常；全算子平均加速比（Speedup Ratio）对比 PyTorch 原生达到 \(\ge 1.35x\)。8. 能实现的成果（简历量化指标）“构建了 \(3 \times 4\) 全因子测试矩阵，通过 pytest 参数化和零拷贝显存技术，将原本繁重的人工对标耗时由 2 小时缩短至 3 分钟。成功拦截了 2 处由于算子融合导致的数值退化漏洞（精度损失），并在新驱动发布中建立起了 5% 的性能回归（Regression）拦截防御线，确保了模型交付的高可靠性。”🌐 项目二：基于 Triton 的流式高并发推理引擎性能压测与长尾延迟（Tail Latency）自动化调优平台1. 项目介绍模型通过底层编译后，需要部署到生产环境提供 API 服务。本项目针对行业标准的 NVIDIA Triton Inference Server，采用 Python asyncio 异步协程机制搭建了一套压测与全链路稳定性调优平台。通过模拟海量用户并发涌入流式服务（Streaming），自动化探索和调优 Triton 的底层动态攒批（Dynamic Batching）等核心参数。2. 项目难点与解决的痛点痛点：大模型在线上高并发运行最怕长尾延迟（Tail Latency）。如果为了榨干 GPU 提高吞吐量而把动态攒批的等待阈值设得过大，会导致用户的首字延迟（TTFT）产生数倍的非线性暴增，用户体验严重卡顿。而传统的压测工具（如 JMeter）无法解析 LLM 的流式回包，也无法统计首字延迟。难点：异步流状态捕获：高并发下如何精准捕捉并计时流式协议（Server-Sent Events, SSE）返回的第一个 Byte（首字）和后续每一个 Token 产生的间隔时间。参数网格搜索的效率瓶颈：面对 Triton 复杂的黑盒配置（队列延迟、吞吐尺寸），如何通过自动化回归找出性能最优的平衡拐点。3. 项目流程服务端拉起：通过 Docker 部署带 TensorRT 引擎的 Triton 推理服务，导出基础 config.pbtxt。并发冲击注入：异步压测引擎启动，使用协程动态生成 1 到 256 个虚拟流式请求并发涌入。流式时序解析：客户端在收到首个回包块时记录时间戳计算 TTFT，在回包结束时计算 TPOT。配置网格轮询：pytest 自动化脚本修改 max_queue_delay_microseconds 参数，平移重启服务并再次触发压测循环。决策生成：汇聚不同并发下的吞吐与延迟，自动化生成性能变化曲线。4. 数据集、测试集与验收集准备压测请求集（Prompt Dataset）：不使用固定文本，而是准备包含不同上下文长度（500、2000、8000 tokens）的短文与提示词库。因为大模型推理时，输入长短（预填充阶段 Context Length）决定了首字延迟，而输出长短（生成阶段 Generation Length）决定了吞吐量。校准与验收集：包含各种不规范的并发模式（如突发流量 Spike Traffic、持续高压阶梯流量 Step Traffic），专门用来验证推理服务队列在极端冲击下的请求拒绝率（503 报错率）。5. 项目核心骨架代码pythonimport pytest
+import asyncio
+import aiohttp
+import time
+
+class TritonStreamingClient:
+    """利用 Python asyncio 打造的硬核流式高并发压测客户端"""
+    def __init__(self, url):
+        self.url = url
+
+    async def send_stream_request(self):
+        start_time = time.time()
+        ttft = None  # 首字延迟 (Time-to-First-Token)
+        
+        async with aiohttp.ClientSession() as session:
+            # 模拟向大模型/Triton 发送流式请求
+            async with session.post(self.url, json={"prompt": "Hello"}) as response:
+                async for chunk in response.content.iter_any():
+                    if ttft is None:
+                        # 核心测开指标：捕捉到大模型返回的第一根 Byte 流
+                        ttft = time.time() - start_time
+                
+                tpot = (time.time() - start_time - ttft)  # 单字生成总延迟
+                return ttft, tpot
+
+@pytest.mark.parametrize("concurrent_users", [10, 50, 100])
+@pytest.mark.asyncio
+async def test_triton_serving_tail_latency(concurrent_users):
+    client = TritonStreamingClient("http://localhost:8000/v1/models/llm/generate_stream")
+    
+    # 模拟并发动态涌入 (Concurrence Shock)
+    tasks = [client.send_stream_request() for _ in range(concurrent_users)]
+    results = await asyncio.gather(*tasks)
+    
+    # 提取统计学核心指标：p99 长尾延迟
+    ttft_list = [r[0] for r in results]
+    p99_ttft = np.percentile(ttft_list, 99)
+    
+    print(f"\n[并发数: {concurrent_users}] -> p99 首字延迟: {p99_ttft:.4f}s")
+    
+    # 准出红线：高并发下流式响应首字卡顿绝不能超过 500ms
+    assert p99_ttft < 0.5, f"CRITICAL: 线上长尾延迟超标，系统产生响应严重积压！"
+Use code with caution.6. 测试怎么测（测试策略）并发阶梯压力测试：并发数按 1 -> 16 -> 64 -> 128 -> 256 梯度上升，持续监控硬件端 Triton 队列深度（Queue Depth）和 GPU 算力利用率（MFU）。正交参数寻优测试：在自动化脚本中循环将 Triton 的攒批延迟从 0us（立刻发射）修改到 10000us（深度攒批）。通过对比每一次用例的性能，找到在保证高吞吐（Tokens/s）的同时，不击穿 p99 长尾延迟红线的最佳黄金平衡拐点。7. 准入准出标准准入标准（Entry）：Triton 引擎在单并发下无异常报错，且 config.pbtxt 的输入输出张量描述与项目一生成的 TensorRT 硬件参数完全闭环对齐。准出标准（Exit）：在业务指定的标称高并发冲击（如 64 并发）下，系统的 p99 首字延迟 \(<500\text{ms}\)，且测试期间整个 Triton 容器无内存下陷、无底层 C++ 核心转储（Core Dump）崩溃。8. 能实现的成果（简历量化指标）“利用异步协程技术自主研发了支持大模型 SSE 流式协议的高并发压测引擎。针对 Triton 推理服务底层队列与攒批参数开展正交多维度寻优，成功定位并解决了并发 \(\ge 64\) 时由于攒批参数配置不当引发的 p99 延迟暴增 150% 的长尾性能瓶颈。最终调优生成的参数选型配置，在保障线上系统吞吐量（Tokens/s）提升 35% 的同时，将 p99 长尾延迟强行压低了 42%。”💡 总结：你在英伟达面试官眼中的专家画像当你把这两个项目结构化地写进简历并按照上述框架进行面试复盘时：项目一 证明了你理解单芯片硬件和编译器级别（TensorRT）的计算、精度、内存对齐与数值截断；项目二 证明了你理解工程级高并发和服务器运行时级（Triton）的吞吐、流控、异步队列与长尾调优。两个项目由底层数学加速延伸到上层高并发应用，不仅体现了测开最核心的“发现瓶颈与自动化解决”的尊严，更彻底将你传统的存储压测功底转换为 AI 基础设施领域的王牌武器。针对这两个全流程方案，你可以挑选其中一个开始你的 18 天排期投入。如果需要：我可以为你打包提供项目一所需的 PyTorch 模型一键快速导出 ONNX 格式的 Python 独立脚本。或者提供项目二中如何用 Docker 部署 Triton Inference Server 的最小化镜像配置文件（config.pbtxt）。
