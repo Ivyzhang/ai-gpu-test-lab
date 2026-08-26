@@ -1,0 +1,45 @@
+{
+  "approved_at": "2026-08-26T08:25:34.367955+00:00",
+  "environment": {
+    "gpu_name": "NVIDIA GeForce RTX 4090 D",
+    "driver": "595.71.05",
+    "cuda_runtime": "12.4",
+    "tensorrt": "10.16.1.11",
+    "torch": "2.6.0+cu124",
+    "container_image": "unavailable",
+    "git_commit": "8c14290468992ca0ccbdd36d69fda5fe1600f1d7",
+    "fingerprint": "79245db5456cb48d"
+  },
+  "cases": {
+    "1x8": {
+      "shape": {
+        "batch": 1,
+        "sequence": 8
+      },
+      "median": 0.09113600105047226,
+      "p95": 0.09932799637317657,
+      "mean": 0.09401356890797614,
+      "stdev": 0.029851776411642977
+    },
+    "4x128": {
+      "shape": {
+        "batch": 4,
+        "sequence": 128
+      },
+      "median": 0.09011200070381165,
+      "p95": 0.09622400254011154,
+      "mean": 0.09404390469193459,
+      "stdev": 0.036516387735255555
+    },
+    "8x512": {
+      "shape": {
+        "batch": 8,
+        "sequence": 512
+      },
+      "median": 0.09016000106930733,
+      "p95": 0.09612800180912018,
+      "mean": 0.09131763279438018,
+      "stdev": 0.004824665369728621
+    }
+  }
+}

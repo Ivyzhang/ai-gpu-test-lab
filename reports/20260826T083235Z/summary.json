@@ -1,0 +1,47 @@
+{
+  "run_id": "20260826T083235Z",
+  "suites": [
+    "operator",
+    "triton",
+    "correctness",
+    "dynamic",
+    "negative",
+    "performance",
+    "soak"
+  ],
+  "status": "PASS",
+  "reason": "candidate performance is within the approved baseline",
+  "pytest_exit_code": 0,
+  "environment": {
+    "gpu_name": "NVIDIA GeForce RTX 4090 D",
+    "driver": "595.71.05",
+    "cuda_runtime": "12.4",
+    "tensorrt": "10.16.1.11",
+    "torch": "2.6.0+cu124",
+    "container_image": "unavailable",
+    "git_commit": "8c14290468992ca0ccbdd36d69fda5fe1600f1d7",
+    "fingerprint": "79245db5456cb48d"
+  },
+  "artifacts": {
+    "model_sha256": "4443a061059971151459237824451153a9c28fd41b78ffd7502489c08c3a66a2",
+    "engine_sha256": "624c8945537288ca115a92951684ce748d395c037a213580bc9293fbea9b4f5d"
+  },
+  "contract": {
+    "profile_min": [
+      1,
+      8
+    ],
+    "profile_opt": [
+      4,
+      128
+    ],
+    "profile_max": [
+      8,
+      512
+    ]
+  },
+  "performance": {
+    "baseline_path": "baselines/rtx4090d-trt10.json"
+  },
+  "generated_at": "2026-08-26T08:33:14.016533+00:00"
+}
