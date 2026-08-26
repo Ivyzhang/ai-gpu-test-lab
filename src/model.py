@@ -27,4 +27,4 @@ class TinyTransformerEncoder(nn.Module):
         x = x * mask
         h = self.norm1(x + F.gelu(self.linear1(x)))
         h = self.norm2(h + F.softmax(self.linear2(h), dim=-1))
-        return h
+        return h.to(torch.float16)

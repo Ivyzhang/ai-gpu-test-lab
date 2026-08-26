@@ -17,6 +17,14 @@ class TrtRunner:
             raise RuntimeError(f"failed to deserialize engine: {engine_path}")
         self.context = self.engine.create_execution_context()
         self.stream = torch.cuda.Stream()
+        for index in range(self.engine.num_io_tensors):
+            name = self.engine.get_tensor_name(index)
+            print(
+                name,
+                "mode=", self.engine.get_tensor_mode(name),
+                "dtype=", self.engine.get_tensor_dtype(name),
+                "shape=", self.engine.get_tensor_shape(name),
+            )
 
     def run_async(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """Enqueue inference without synchronizing the runner stream."""
@@ -40,6 +48,12 @@ class TrtRunner:
         self.context.execute_async_v3(self.stream.cuda_stream)
         # input_ids/attention_mask/output must stay alive until here: the engine
         # only holds their raw device addresses, not Python references to the tensors.
+        print(
+            "runtime shapes:",
+            self.context.get_tensor_shape("input_ids"),
+            self.context.get_tensor_shape("attention_mask"),
+            self.context.get_tensor_shape("hidden_states"),
+        )
         return output
 
     def run(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:

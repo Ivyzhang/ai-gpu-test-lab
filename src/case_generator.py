@@ -20,7 +20,9 @@ class OperatorCase:
         g = torch.Generator().manual_seed(seed)
         x = torch.randn(*self.shape, generator=g)
         if self.layout == "transposed":
-            x = x.T  # 制造 non-contiguous tensor
+            x = torch.randn(self.shape[1], self.shape[0],
+                            generator=g).T
+            # 制造 non-contiguous tensor
         return x
 
 

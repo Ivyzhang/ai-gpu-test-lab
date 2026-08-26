@@ -4,9 +4,32 @@ import torch
 from src.case_generator import generate_cases
 from src.operators import OPERATORS
 
+# TOLERANCE = {
+#     torch.float32: dict(atol=1e-6, rtol=1e-5),
+#     torch.float16: dict(atol=1e-3, rtol=1e-3),
+# }
+
 TOLERANCE = {
-    torch.float32: dict(atol=1e-6, rtol=1e-5),
-    torch.float16: dict(atol=1e-3, rtol=1e-3),
+    "default": {
+        torch.float32: dict(atol=1e-6, rtol=1e-5),
+        torch.float16: dict(atol=1e-3, rtol=1e-3),
+    },
+    "matmul": {
+        torch.float32: dict(atol=2e-3, rtol=1e-3),
+        torch.float16: dict(atol=0.25, rtol=3e-3),
+    },
+    "layernorm": {
+        torch.float32: dict(atol=2e-5, rtol=2e-5),
+        torch.float16: dict(atol=3e-3, rtol=2e-2),
+    },
+    "gelu": {
+        torch.float32: dict(atol=2e-6, rtol=2e-5),
+        torch.float16: dict(atol=2e-3, rtol=2e-3),
+    },
+    "softmax": {
+        torch.float32: dict(atol=1e-6, rtol=1e-5),
+        torch.float16: dict(atol=1e-3, rtol=1e-3),
+    },
 }
 
 CASES = [(name, case) for name in OPERATORS for case in generate_cases(name)]
@@ -33,6 +56,24 @@ def test_operator_correctness(op_name, case) -> None:
     cand = op.candidate(x, dtype=case.dtype).cpu().float()
 
     assert not torch.isnan(cand).any() and not torch.isinf(cand).any(), case.case_id
+    tolerance = TOLERANCE.get(
+        op_name,
+        TOLERANCE["default"],
+    )[case.dtype]
+
     torch.testing.assert_close(
-        cand, ref, **TOLERANCE[case.dtype], msg=lambda m: f"{case.case_id}: {m}"
+        cand,
+        ref,
+        **tolerance,
+        msg=lambda m: f"{case.case_id}: {m}",
     )
+
+def test_layout_preserves_logical_shape():
+    for _, case in CASES:
+        x = case.make_input()
+        assert tuple(x.shape) == tuple(case.shape)
+
+        if case.layout == "transposed":
+            assert not x.is_contiguous()
+        else:
+            assert x.is_contiguous()

@@ -166,16 +166,42 @@ def generate_release_summary(summary: dict, report_dir: Path, reproduce: str) ->
     (report_dir / "release-summary.md").write_text("\n".join(lines) + "\n")
 
 
-def approve_baseline(path: Path, environment: dict, candidate: dict) -> None:
+def approve_baseline(
+    path: Path,
+    environment: dict,
+    candidate: dict,
+) -> None:
     if not candidate:
-        raise ValueError("cannot approve a baseline without performance samples")
+        raise ValueError(
+            "cannot approve a baseline without performance samples"
+        )
+
+    compact_cases = {}
+
+    for shape, data in candidate.items():
+        compact_cases[shape] = {
+            "shape": data.get("shape"),
+            "median": data["median"],
+            "p95": data["p95"],
+            "mean": data["mean"],
+            "stdev": data["stdev"],
+        }
+
     path.parent.mkdir(parents=True, exist_ok=True)
+
     payload = {
         "approved_at": datetime.now(timezone.utc).isoformat(),
         "environment": environment,
-        "cases": candidate,
+        "cases": compact_cases,
     }
-    path.write_text(json.dumps(payload, indent=2))
+
+    path.write_text(
+        json.dumps(
+            payload,
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 def main() -> int:
