@@ -43,3 +43,12 @@ def test_within_threshold_passes(tmp_path):
     status, reason, _ = evaluate_performance(CANDIDATE, baseline, ENVIRONMENT)
     assert status == "PASS"
     assert "within" in reason
+
+
+def test_missing_workload_case_in_baseline_is_not_comparable(tmp_path):
+    baseline = _write_baseline(tmp_path)
+    candidate = {"decode-b1-s1": {"median": 1.0}}
+    status, reason, details = evaluate_performance(candidate, baseline, ENVIRONMENT)
+    assert status == "NOT_COMPARABLE"
+    assert "missing approved cases" in reason
+    assert details["missing_cases"] == ["decode-b1-s1"]

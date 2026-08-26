@@ -2,11 +2,11 @@
 import pytest
 import torch
 
-from src.contract import PROFILE_MAX, PROFILE_MIN, PROFILE_OPT, VOCAB_SIZE
+from src.contract import PROFILE_MAX, PROFILE_MIN, PROFILE_OPT, SUPPORTED_WORKLOAD_SHAPES, VOCAB_SIZE
 from src.model import TinyTransformerEncoder
 
 FP16_TOLERANCE = dict(rtol=5e-3, atol=5e-3)
-SAMPLE_SHAPES = [PROFILE_MIN, PROFILE_OPT, PROFILE_MAX]
+SAMPLE_SHAPES = list(SUPPORTED_WORKLOAD_SHAPES)
 
 
 def _error_metrics(actual: torch.Tensor, reference: torch.Tensor) -> dict:

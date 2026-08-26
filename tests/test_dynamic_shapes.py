@@ -2,9 +2,24 @@
 import pytest
 import torch
 
-from src.contract import PROFILE_MAX, PROFILE_MIN, PROFILE_OPT, VOCAB_SIZE
+from src.contract import (
+    PROFILE_MAX,
+    PROFILE_MIN,
+    PROFILE_OPT,
+    SUPPORTED_WORKLOAD_SHAPES,
+    VOCAB_SIZE,
+)
 
-IN_PROFILE_SHAPES = [PROFILE_MIN, PROFILE_OPT, PROFILE_MAX, (3, 127), (5, 200)]
+IN_PROFILE_SHAPES = [*SUPPORTED_WORKLOAD_SHAPES, (3, 127), (5, 200)]
+
+
+def test_decode_and_prefill_shapes_are_in_profile() -> None:
+    assert PROFILE_MIN == (1, 1)
+    assert all(
+        PROFILE_MIN[0] <= batch <= PROFILE_MAX[0]
+        and PROFILE_MIN[1] <= seq <= PROFILE_MAX[1]
+        for batch, seq in SUPPORTED_WORKLOAD_SHAPES
+    )
 
 
 @pytest.mark.gpu

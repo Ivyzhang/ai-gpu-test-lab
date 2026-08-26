@@ -1,4 +1,5 @@
 """Run selected suites and produce an auditable release decision."""
+from __future__ import annotations
 import argparse
 import hashlib
 import json
@@ -125,9 +126,11 @@ def evaluate_performance(
         }
 
     regressions = []
+    missing_cases = []
     for shape, current in candidate.items():
         approved = baseline.get("cases", {}).get(shape)
         if approved is None:
+            missing_cases.append(shape)
             continue
         ratio = current["median"] / approved["median"]
         if ratio > 1.08:
@@ -137,6 +140,12 @@ def evaluate_performance(
                 "baseline_median_ms": approved["median"],
                 "ratio": ratio,
             })
+    if missing_cases:
+        return "NOT_COMPARABLE", "baseline is missing approved cases", {
+            "missing_cases": sorted(missing_cases),
+            "candidate": candidate,
+            "baseline_path": str(baseline_path),
+        }
     if regressions:
         return "BLOCKED", "one or more median latencies regressed by more than 8%", {
             "regressions": regressions,
