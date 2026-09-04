@@ -1,0 +1,13 @@
+{
+  "collected_at": "2026-09-04T11:42:19.976780+00:00",
+  "gpu_name": "NVIDIA GeForce RTX 5090",
+  "gpu_count": 1,
+  "driver": "595.71.05",
+  "cuda_runtime": "13.0",
+  "torch": "2.13.0+cu130",
+  "tensorrt": "10.16.1.11",
+  "python": "3.12.3",
+  "git_commit": "f237728e5a937f46a50884141d290a5b7a6174ea",
+  "model_sha256": "b364720ab3805fc9bd2852468b9084728f5924988c905ee4be0e3a13e787a1dc",
+  "engine_sha256": "93729547761ed0c5dabf154bf9bc27563cab17d981f922b655cb5fbe9b2eb1d8"
+}
