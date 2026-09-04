@@ -10,6 +10,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.contract import PROFILE_MAX, PROFILE_MIN, PROFILE_OPT
+import shutil
+
+from src.environment import write_environment
 
 SUITE_TO_TEST_FILES = {
     "operator": [
@@ -228,6 +231,21 @@ def main() -> int:
     report_dir = Path("reports") / run_id
     report_dir.mkdir(parents=True, exist_ok=True)
 
+    model_path = Path("model.onnx")
+    engine_path = Path("model.plan")
+
+    environment = write_environment(
+        report_dir / "environment.json",
+        model_path=model_path,
+        engine_path=engine_path,
+    )
+
+    if model_path.exists():
+        shutil.copy2(model_path, report_dir / model_path.name)
+
+    if engine_path.exists():
+        shutil.copy2(engine_path, report_dir / engine_path.name)
+
     pytest_exit_code = run_pytest(suites, report_dir)
     environment = collect_environment()
     candidate = load_candidate_performance(report_dir)
@@ -277,3 +295,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
