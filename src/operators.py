@@ -1,7 +1,6 @@
 """Reference (PyTorch CPU FP32) / candidate (PyTorch CUDA) operator interfaces."""
 import torch
 import torch.nn.functional as F
-from triton_kernels.softmax import triton_softmax
 
 Tensor = torch.Tensor
 
@@ -78,18 +77,6 @@ class GeluOp(OperatorUnderTest):
         self.validate_input(x)
         return F.gelu(x.to(device="cuda", dtype=dtype))
 
-class TritonSoftmaxOp(OperatorUnderTest):
-    name = "triton_softmax"
-
-    def reference(self, x, **kwargs):
-        return F.softmax(x.cpu().float(), dim=-1)
-
-    def candidate(self, x, dtype=torch.float16, **kwargs):
-        self.validate_input(x)
-        return triton_softmax(x.to(device="cuda", dtype=dtype))
-
-
-
 # matmul/layernorm own parameters sized to the input's last dim, so they are
 # built per-case (hidden=case.shape[-1]) instead of once with a fixed size;
 # the default keeps zero-arg call sites (e.g. `OPERATORS["gelu"]()`) working.
@@ -98,5 +85,4 @@ OPERATORS = {
     "layernorm": lambda hidden=1024: LayerNormOp(hidden=hidden),
     "softmax": lambda hidden=1024: SoftmaxOp(),
     "gelu": lambda hidden=1024: GeluOp(),
-    "triton_softmax": lambda hidden=1024: TritonSoftmaxOp(),
 }

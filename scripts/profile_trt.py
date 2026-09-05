@@ -1,13 +1,16 @@
 import torch
+from src.workloads import WORKLOADS
 from src.trt_runner import TrtRunner
 
-runner = TrtRunner("model.plan")
+WORKLOAD_NAME = "distilbert-base-uncased"
+spec = WORKLOADS[WORKLOAD_NAME]
+runner = TrtRunner("model.plan", WORKLOAD_NAME)
 
 batch, seq = 4, 128
 
 input_ids = torch.randint(
     0,
-    32000,
+    spec.vocab_size,
     (batch, seq),
     device="cuda",
     dtype=torch.int32,
