@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from src.case_generator import generate_cases, generate_matmul_cases
-from src.contract import DECODE_CASES, PREFILL_CASES, WORKLOAD_CASES
+from src.contract import SHORT_CASES, SEQUENCE_CASES, WORKLOAD_CASES
 from src.operators import MatMulOp, OPERATORS
 
 # TOLERANCE = {
@@ -40,18 +40,19 @@ def test_case_matrix_is_generated() -> None:
     """CPU-only smoke check so `pytest -m "not gpu"` has something to run."""
     assert len(CASES) == len(OPERATORS) * len(generate_cases("gelu"))
     assert all(callable(factory) for factory in OPERATORS.values())
+    assert set(OPERATORS) == {"matmul", "layernorm", "softmax", "gelu"}
 
 
-def test_workload_cases_distinguish_decode_from_prefill() -> None:
-    assert all(case.mode == "decode" and case.sequence == 1 for case in DECODE_CASES)
-    assert all(case.mode == "prefill" and case.sequence > 1 for case in PREFILL_CASES)
+def test_workload_cases_distinguish_short_from_sequence() -> None:
+    assert all(case.mode == "short" and case.sequence == 1 for case in SHORT_CASES)
+    assert all(case.mode == "sequence" and case.sequence > 1 for case in SEQUENCE_CASES)
     assert {(case.case_id, case.batch, case.sequence) for case in WORKLOAD_CASES} == {
-        ("decode-b1-s1", 1, 1),
-        ("decode-b4-s1", 4, 1),
-        ("decode-b8-s1", 8, 1),
-        ("prefill-b1-s8", 1, 8),
-        ("prefill-b4-s128", 4, 128),
-        ("prefill-b8-s512", 8, 512),
+        ("short-b1-s1", 1, 1),
+        ("short-b4-s1", 4, 1),
+        ("short-b8-s1", 8, 1),
+        ("seq-b1-s8", 1, 8),
+        ("seq-b4-s128", 4, 128),
+        ("seq-b8-s512", 8, 512),
     }
 
 

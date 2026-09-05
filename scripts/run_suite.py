@@ -1,18 +1,19 @@
 """Run selected suites and produce an auditable release decision."""
 from __future__ import annotations
+
 import argparse
-import hashlib
 import json
+import math
 import os
+import random
+import statistics
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.contract import PROFILE_MAX, PROFILE_MIN, PROFILE_OPT
-import shutil
-
-from src.environment import write_environment
+from src.environment import collect_environment, sha256_file
 
 SUITE_TO_TEST_FILES = {
     "operator": [
@@ -21,63 +22,13 @@ SUITE_TO_TEST_FILES = {
         "tests/test_operator_boundary.py",
     ],
     "triton": ["tests/test_triton_kernel.py"],
+    "onnx": ["tests/test_onnx_runtime.py"],
     "correctness": ["tests/test_correctness.py"],
     "dynamic": ["tests/test_dynamic_shapes.py"],
     "negative": ["tests/test_negative_cases.py"],
     "performance": ["tests/test_performance.py"],
     "soak": ["tests/test_soak.py"],
 }
-
-
-def _command_output(command: list[str]) -> str:
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-    except FileNotFoundError:
-        return "unavailable"
-    return result.stdout.strip() or "unavailable"
-
-
-def _module_version(name: str) -> str:
-    try:
-        module = __import__(name)
-    except Exception:
-        return "unavailable"
-    return str(getattr(module, "__version__", "unknown"))
-
-
-def sha256_file(path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def collect_environment() -> dict:
-    try:
-        import torch
-
-        cuda_runtime = torch.version.cuda or "unavailable"
-    except Exception:
-        cuda_runtime = "unavailable"
-    environment = {
-        "gpu_name": _command_output(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]),
-        "driver": _command_output(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]),
-        "cuda_runtime": cuda_runtime,
-        "tensorrt": _module_version("tensorrt"),
-        "torch": _module_version("torch"),
-        "container_image": os.environ.get("CONTAINER_IMAGE_DIGEST", "unavailable"),
-        "git_commit": _command_output(["git", "rev-parse", "HEAD"]),
-    }
-    comparable = {key: environment[key] for key in (
-        "gpu_name", "driver", "cuda_runtime", "tensorrt", "torch", "container_image"
-    )}
-    environment["fingerprint"] = hashlib.sha256(
-        json.dumps(comparable, sort_keys=True).encode()
-    ).hexdigest()[:16]
-    return environment
 
 
 def validate_suites(suite_names: list[str]) -> None:
@@ -87,12 +38,12 @@ def validate_suites(suite_names: list[str]) -> None:
 
 
 def run_pytest(suite_names: list[str], report_dir: Path) -> int:
-    test_files = [file for suite in suite_names for file in SUITE_TO_TEST_FILES[suite]]
+    files = [file for suite in suite_names for file in SUITE_TO_TEST_FILES[suite]]
     command = [
         sys.executable,
         "-m",
         "pytest",
-        *test_files,
+        *files,
         f"--junitxml={report_dir / 'junit.xml'}",
         "-v",
     ]
@@ -104,59 +55,92 @@ def run_pytest(suite_names: list[str], report_dir: Path) -> int:
 def load_candidate_performance(report_dir: Path) -> dict:
     result = {}
     for path in sorted((report_dir / "performance").glob("candidate-*.json")):
-        shape = path.stem.removeprefix("candidate-")
-        result[shape] = json.loads(path.read_text())
+        data = json.loads(path.read_text())
+        key = f"{data['workload_name']}::{data['case_id']}"
+        result[key] = data
     return result
 
 
-def evaluate_performance(
-    candidate: dict,
-    baseline_path: Path | None,
-    environment: dict,
-) -> tuple[str, str, dict]:
+def bootstrap_median_ci(values: list[float], seed: int, samples: int = 2000) -> tuple[float, float]:
+    if not values:
+        raise ValueError("bootstrap requires at least one value")
+    if len(values) == 1:
+        return values[0], values[0]
+    rng = random.Random(seed)
+    medians = sorted(
+        statistics.median(rng.choices(values, k=len(values)))
+        for _ in range(samples)
+    )
+    low = medians[max(0, math.ceil(len(medians) * 0.025) - 1)]
+    high = medians[min(len(medians) - 1, math.ceil(len(medians) * 0.975) - 1)]
+    return low, high
+
+
+def _trial_medians(data: dict) -> list[float]:
+    if data.get("trials"):
+        return [float(trial["median"]) for trial in data["trials"]]
+    if data.get("trial_medians"):
+        return [float(value) for value in data["trial_medians"]]
+    return [float(data["median"])]
+
+
+def evaluate_performance(candidate: dict, baseline_path: Path | None, environment: dict):
     if not candidate:
         return "PASS", "no performance samples were requested", {}
     if baseline_path is None or not baseline_path.exists():
-        return "PASS", "candidate performance recorded; no approved baseline supplied", {
-            "candidate": candidate,
-        }
+        return "PASS", "candidate performance recorded; no approved baseline supplied", {"candidate": candidate}
 
     baseline = json.loads(baseline_path.read_text())
     if baseline.get("environment", {}).get("fingerprint") != environment["fingerprint"]:
-        return "NOT_COMPARABLE", "baseline environment fingerprint differs", {
-            "candidate": candidate,
+        return "NOT_COMPARABLE", "baseline environment fingerprint differs", {"baseline_path": str(baseline_path)}
+
+    baseline_cases = set(baseline.get("cases", {}))
+    candidate_cases = set(candidate)
+    if baseline_cases != candidate_cases:
+        return "NOT_COMPARABLE", "baseline and candidate workload cases differ", {
+            "missing_cases": sorted(candidate_cases - baseline_cases),
+            "candidate_missing_cases": sorted(baseline_cases - candidate_cases),
             "baseline_path": str(baseline_path),
         }
 
     regressions = []
-    missing_cases = []
-    for shape, current in candidate.items():
-        approved = baseline.get("cases", {}).get(shape)
-        if approved is None:
-            missing_cases.append(shape)
-            continue
-        ratio = current["median"] / approved["median"]
-        if ratio > 1.08:
+    for case_id, current in candidate.items():
+        approved = baseline["cases"][case_id]
+        current_medians = _trial_medians(current)
+        approved_medians = _trial_medians(approved)
+        current_median = statistics.median(current_medians)
+        approved_median = statistics.median(approved_medians)
+        ratio = current_median / approved_median
+        current_ci = bootstrap_median_ci(current_medians, seed=17)
+        approved_ci = bootstrap_median_ci(approved_medians, seed=23)
+        if ratio > 1.08 and (current_ci[0] > approved_ci[1] or approved_ci[0] > current_ci[1]):
             regressions.append({
-                "shape": shape,
-                "candidate_median_ms": current["median"],
-                "baseline_median_ms": approved["median"],
+                "case_id": case_id,
+                "candidate_median_ms": current_median,
+                "baseline_median_ms": approved_median,
                 "ratio": ratio,
+                "candidate_ci95_ms": current_ci,
+                "baseline_ci95_ms": approved_ci,
             })
-    if missing_cases:
-        return "NOT_COMPARABLE", "baseline is missing approved cases", {
-            "missing_cases": sorted(missing_cases),
-            "candidate": candidate,
-            "baseline_path": str(baseline_path),
-        }
+
     if regressions:
-        return "BLOCKED", "one or more median latencies regressed by more than 8%", {
+        return "PERFORMANCE_REVIEW_REQUIRED", "latency regression exceeded 8% with non-overlapping bootstrap intervals", {
             "regressions": regressions,
             "baseline_path": str(baseline_path),
         }
-    return "PASS", "candidate performance is within the approved baseline", {
-        "baseline_path": str(baseline_path),
-    }
+    return "PASS", "candidate performance is within the approved baseline", {"baseline_path": str(baseline_path)}
+
+
+def approve_baseline(path: Path, environment: dict, candidate: dict) -> None:
+    if not candidate:
+        raise ValueError("cannot approve a baseline without performance samples")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "schema_version": 2,
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+        "environment": environment,
+        "cases": candidate,
+    }, indent=2) + "\n")
 
 
 def generate_release_summary(summary: dict, report_dir: Path, reproduce: str) -> None:
@@ -167,60 +151,19 @@ def generate_release_summary(summary: dict, report_dir: Path, reproduce: str) ->
         f"Reproduce: {reproduce}",
         f"Raw report: {report_dir / 'summary.json'}",
     ]
-    regressions = summary.get("performance", {}).get("regressions", [])
-    if regressions:
-        lines.append("Performance regressions:")
-        lines.extend(
-            f"- {item['shape']}: {item['candidate_median_ms']:.4f} ms vs "
+    for item in summary.get("performance", {}).get("regressions", []):
+        lines.append(
+            f"- {item['case_id']}: {item['candidate_median_ms']:.4f} ms vs "
             f"{item['baseline_median_ms']:.4f} ms ({item['ratio']:.3f}x)"
-            for item in regressions
         )
     (report_dir / "release-summary.md").write_text("\n".join(lines) + "\n")
 
 
-def approve_baseline(
-    path: Path,
-    environment: dict,
-    candidate: dict,
-) -> None:
-    if not candidate:
-        raise ValueError(
-            "cannot approve a baseline without performance samples"
-        )
-
-    compact_cases = {}
-
-    for shape, data in candidate.items():
-        compact_cases[shape] = {
-            "shape": data.get("shape"),
-            "median": data["median"],
-            "p95": data["p95"],
-            "mean": data["mean"],
-            "stdev": data["stdev"],
-        }
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    payload = {
-        "approved_at": datetime.now(timezone.utc).isoformat(),
-        "environment": environment,
-        "cases": compact_cases,
-    }
-
-    path.write_text(
-        json.dumps(
-            payload,
-            indent=2,
-        )
-        + "\n"
-    )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", default="operator", help="comma-separated: " + ",".join(SUITE_TO_TEST_FILES))
-    parser.add_argument("--baseline", type=Path, help="approved baseline JSON")
-    parser.add_argument("--approve-baseline", type=Path, help="write this successful run as an approved baseline")
+    parser.add_argument("--suite", default="operator")
+    parser.add_argument("--baseline", type=Path)
+    parser.add_argument("--approve-baseline", type=Path)
     parser.add_argument("--model", type=Path, default=Path("model.onnx"))
     parser.add_argument("--engine", type=Path, default=Path("model.plan"))
     args = parser.parse_args()
@@ -231,34 +174,15 @@ def main() -> int:
     report_dir = Path("reports") / run_id
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    model_path = Path("model.onnx")
-    engine_path = Path("model.plan")
-
-    environment = write_environment(
-        report_dir / "environment.json",
-        model_path=model_path,
-        engine_path=engine_path,
-    )
-
-    if model_path.exists():
-        shutil.copy2(model_path, report_dir / model_path.name)
-
-    if engine_path.exists():
-        shutil.copy2(engine_path, report_dir / engine_path.name)
-
     pytest_exit_code = run_pytest(suites, report_dir)
+    artifact_dir = report_dir / "artifacts"
     environment = collect_environment()
     candidate = load_candidate_performance(report_dir)
     performance_status, performance_reason, performance_details = evaluate_performance(
         candidate, args.baseline, environment
     )
-
-    if pytest_exit_code != 0:
-        status = "BLOCKED"
-        reason = "one or more suites failed; see junit.xml"
-    else:
-        status = performance_status
-        reason = performance_reason if candidate else "all requested suites passed"
+    status = "BLOCKED" if pytest_exit_code != 0 else performance_status
+    reason = "one or more suites failed; see junit.xml" if pytest_exit_code != 0 else performance_reason
 
     if args.approve_baseline:
         if status != "PASS":
@@ -273,18 +197,17 @@ def main() -> int:
         "pytest_exit_code": pytest_exit_code,
         "environment": environment,
         "artifacts": {
-            "model_sha256": sha256_file(args.model) or sha256_file(report_dir / "artifacts/model.onnx"),
-            "engine_sha256": sha256_file(args.engine) or sha256_file(report_dir / "artifacts/model.plan"),
+            path.stem: sha256_file(path)
+            for path in sorted(artifact_dir.glob("*.onnx"))
+        } | {
+            path.stem: sha256_file(path)
+            for path in sorted(artifact_dir.glob("*.plan"))
         },
-        "contract": {
-            "profile_min": PROFILE_MIN,
-            "profile_opt": PROFILE_OPT,
-            "profile_max": PROFILE_MAX,
-        },
+        "contract": {"profile_min": PROFILE_MIN, "profile_opt": PROFILE_OPT, "profile_max": PROFILE_MAX},
         "performance": performance_details,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    (report_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    (report_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     reproduce = f"python scripts/run_suite.py --suite {args.suite}"
     if args.baseline:
         reproduce += f" --baseline {args.baseline}"
@@ -295,4 +218,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

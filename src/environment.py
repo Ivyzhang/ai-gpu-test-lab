@@ -9,6 +9,8 @@ from pathlib import Path
 
 import torch
 
+from src.workloads import WORKLOADS, WORKLOAD_NAMES
+
 
 def run_command(command: list[str]) -> str:
     try:
@@ -73,11 +75,20 @@ def get_tensorrt_version() -> str:
         return "unavailable"
 
 
+def environment_fingerprint(environment: dict) -> str:
+    comparable_keys = (
+        "workloads", "gpu_name", "gpu_count", "driver",
+        "cuda_runtime", "tensorrt", "torch", "python", "container_image",
+    )
+    comparable = {key: environment.get(key, "unavailable") for key in comparable_keys}
+    return hashlib.sha256(json.dumps(comparable, sort_keys=True).encode()).hexdigest()[:16]
+
+
 def collect_environment(
     model_path: str | None = None,
     engine_path: str | None = None,
 ) -> dict:
-    return {
+    environment = {
         "collected_at": datetime.now(timezone.utc).isoformat(),
         "gpu_name": get_gpu_name(),
         "gpu_count": torch.cuda.device_count(),
@@ -85,11 +96,21 @@ def collect_environment(
         "cuda_runtime": torch.version.cuda or "unavailable",
         "torch": torch.__version__,
         "tensorrt": get_tensorrt_version(),
+        "workloads": [
+            {
+                "name": name,
+                "model_name": WORKLOADS[name].model_name,
+                "revision": WORKLOADS[name].revision,
+            }
+            for name in WORKLOAD_NAMES
+        ],
         "python": os.sys.version.split()[0],
         "git_commit": get_git_commit(),
         "model_sha256": sha256_file(model_path) if model_path else "unavailable",
         "engine_sha256": sha256_file(engine_path) if engine_path else "unavailable",
     }
+    environment["fingerprint"] = environment_fingerprint(environment)
+    return environment
 
 
 def write_environment(

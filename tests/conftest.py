@@ -1,45 +1,76 @@
-"""Session-scoped ONNX export + TensorRT engine build shared by TensorRT tests."""
+"""Shared parameterized artifacts for both inference workloads."""
 import os
 from pathlib import Path
 
 import pytest
 import torch
 
+from src.workloads import WORKLOADS, WORKLOAD_NAMES
+
 HAS_CUDA = torch.cuda.is_available()
 
 try:
     import tensorrt  # noqa: F401
-
     HAS_TENSORRT = True
 except ImportError:
     HAS_TENSORRT = False
 
 
+@pytest.fixture(scope="session", params=WORKLOAD_NAMES, ids=WORKLOAD_NAMES)
+def workload_name(request):
+    return request.param
+
+
+def _artifact_dir(tmp_path_factory) -> Path:
+    report_dir = os.environ.get("REPORT_DIR")
+    if report_dir:
+        path = Path(report_dir) / "artifacts"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    return tmp_path_factory.mktemp("model_artifacts")
+
+
 @pytest.fixture(scope="session")
-def engine_paths(tmp_path_factory):
-    """Export ONNX and build the FP16 TensorRT engine once per test session."""
+def onnx_paths(tmp_path_factory, workload_name):
+    from src.export_onnx import export
+
+    workdir = _artifact_dir(tmp_path_factory)
+    onnx_path = workdir / f"{workload_name}.onnx"
+    return {
+        "workload_name": workload_name,
+        "onnx": onnx_path,
+        **export(str(onnx_path), workload_name),
+    }
+
+
+@pytest.fixture(scope="session")
+def engine_paths(onnx_paths):
     if not (HAS_CUDA and HAS_TENSORRT):
         pytest.skip("requires a CUDA GPU with TensorRT installed")
 
     from src.build_engine import build_engine
-    from src.export_onnx import export
 
-    report_dir = os.environ.get("REPORT_DIR")
-    if report_dir:
-        workdir = Path(report_dir) / "artifacts"
-        workdir.mkdir(parents=True, exist_ok=True)
-    else:
-        workdir = tmp_path_factory.mktemp("trt_engine")
-    onnx_path = workdir / "model.onnx"
-    engine_path = workdir / "model.plan"
+    workload_name = onnx_paths["workload_name"]
+    engine_path = onnx_paths["onnx"].with_suffix(".plan")
+    return {
+        **onnx_paths,
+        "engine": engine_path,
+        **build_engine(str(onnx_paths["onnx"]), str(engine_path), workload_name),
+    }
 
-    export_info = export(str(onnx_path))
-    build_info = build_engine(str(onnx_path), str(engine_path))
-    return {"onnx": onnx_path, "engine": engine_path, **export_info, **build_info}
+
+@pytest.fixture(scope="session")
+def ort_session(onnx_paths):
+    ort = pytest.importorskip("onnxruntime")
+    return ort.InferenceSession(str(onnx_paths["onnx"]), providers=["CPUExecutionProvider"])
 
 
 @pytest.fixture
 def trt_runner(engine_paths):
     from src.trt_runner import TrtRunner
 
-    return TrtRunner(str(engine_paths["engine"]))
+    runner = TrtRunner(str(engine_paths["engine"]), engine_paths["workload_name"])
+    try:
+        yield runner
+    finally:
+        runner.close()
