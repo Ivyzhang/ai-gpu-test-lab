@@ -32,15 +32,10 @@ def _artifact_dir(tmp_path_factory) -> Path:
 
 @pytest.fixture(scope="session")
 def onnx_paths(tmp_path_factory, workload_name):
-    from src.export_onnx import export
+    from src.export_onnx import export_workload
 
     workdir = _artifact_dir(tmp_path_factory)
-    onnx_path = workdir / f"{workload_name}.onnx"
-    return {
-        "workload_name": workload_name,
-        "onnx": onnx_path,
-        **export(str(onnx_path), workload_name),
-    }
+    return export_workload(workdir, workload_name)
 
 
 @pytest.fixture(scope="session")
@@ -51,18 +46,18 @@ def engine_paths(onnx_paths):
     from src.build_engine import build_engine
 
     workload_name = onnx_paths["workload_name"]
-    engine_path = onnx_paths["onnx"].with_suffix(".plan")
+    engine_path = onnx_paths["fp16_onnx"].with_suffix(".plan")
     return {
         **onnx_paths,
         "engine": engine_path,
-        **build_engine(str(onnx_paths["onnx"]), str(engine_path), workload_name),
+        **build_engine(str(onnx_paths["fp16_onnx"]), str(engine_path), workload_name),
     }
 
 
 @pytest.fixture(scope="session")
 def ort_session(onnx_paths):
     ort = pytest.importorskip("onnxruntime")
-    return ort.InferenceSession(str(onnx_paths["onnx"]), providers=["CPUExecutionProvider"])
+    return ort.InferenceSession(str(onnx_paths["fp32_onnx"]), providers=["CPUExecutionProvider"])
 
 
 @pytest.fixture
@@ -74,3 +69,4 @@ def trt_runner(engine_paths):
         yield runner
     finally:
         runner.close()
+

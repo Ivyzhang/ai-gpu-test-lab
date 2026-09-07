@@ -1,10 +1,19 @@
+import argparse
+from pathlib import Path
+
 import torch
 from src.workloads import WORKLOADS
 from src.trt_runner import TrtRunner
 
-WORKLOAD_NAME = "distilbert-base-uncased"
+parser = argparse.ArgumentParser()
+parser.add_argument("--workload", choices=WORKLOADS, default="distilbert-base-uncased")
+parser.add_argument("--engine", type=Path)
+args = parser.parse_args()
+
+WORKLOAD_NAME = args.workload
 spec = WORKLOADS[WORKLOAD_NAME]
-runner = TrtRunner("model.plan", WORKLOAD_NAME)
+engine_path = args.engine or Path("artifacts") / f"{WORKLOAD_NAME}.fp16.plan"
+runner = TrtRunner(str(engine_path), WORKLOAD_NAME)
 
 batch, seq = 4, 128
 
@@ -51,3 +60,4 @@ print(
 profiler.export_chrome_trace(
     "reports/profiler/tensorrt_trace.json"
 )
+
