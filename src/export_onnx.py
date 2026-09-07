@@ -223,4 +223,3 @@ if __name__ == "__main__":
     parser.add_argument("--workload", choices=WORKLOAD_NAMES, default="distilbert-base-uncased")
     args = parser.parse_args()
     print(export_workload(args.out_dir, args.workload))
-

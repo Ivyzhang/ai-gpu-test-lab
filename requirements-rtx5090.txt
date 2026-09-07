@@ -1,0 +1,4 @@
+# Install this file after requirements.txt with the CUDA 12.8 PyTorch index:
+# python -m pip install --index-url https://download.pytorch.org/whl/cu128 -r requirements-rtx5090.txt
+torch==2.7.1
+triton==3.3.1
