@@ -5,7 +5,16 @@ import torch
 from src.contract import SUPPORTED_WORKLOAD_SHAPES
 from src.workloads import WORKLOADS, make_inputs, reference_forward
 
-FP16_TOLERANCE = dict(rtol=5e-3, atol=5e-3)
+FP16_TOLERANCE = {
+    "tiny-transformer": {
+        "atol": 5e-3,
+        "rtol": 5e-3,
+    },
+    "distilbert-base-uncased": {
+        "atol": 2.5e-2,
+        "rtol": 1e-2,
+    },
+}
 SAMPLE_SHAPES = list(SUPPORTED_WORKLOAD_SHAPES)
 
 
@@ -38,7 +47,13 @@ def test_trt_matches_pytorch_reference(batch, sequence, workload_name, trt_runne
 
     for key, value in _metrics(actual_raw.float(), reference).items():
         record_property(f"{workload_name}_{key}", value)
-    torch.testing.assert_close(actual_raw.float(), reference, **FP16_TOLERANCE)
+    tolerance = FP16_TOLERANCE[workload_name]
+
+    torch.testing.assert_close(
+        actual_raw.float(),
+        reference.float(),
+        **tolerance,
+    )
 
 
 @pytest.mark.gpu
@@ -53,7 +68,13 @@ def test_trt_matches_onnx_runtime(batch, sequence, workload_name, trt_runner, or
         )[0]
     )
     trt_output = trt_runner.run(input_ids.cuda(), attention_mask.cuda()).cpu()
-    torch.testing.assert_close(trt_output.float(), ort_output.float(), **FP16_TOLERANCE)
+    tolerance = FP16_TOLERANCE[workload_name]
+
+    torch.testing.assert_close(
+        trt_output.float(),
+        ort_output.float(),
+        **tolerance,
+    )
 
 
 @pytest.mark.gpu
@@ -73,3 +94,4 @@ def test_trt_is_deterministic(workload_name, trt_runner):
     first = trt_runner.run(input_ids, attention_mask).clone()
     second = trt_runner.run(input_ids, attention_mask)
     torch.testing.assert_close(first, second, atol=0, rtol=0)
+

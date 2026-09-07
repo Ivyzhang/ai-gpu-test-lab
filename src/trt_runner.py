@@ -21,7 +21,7 @@ class TrtRunner:
         for name in INPUT_NAMES:
             if self.engine.get_tensor_dtype(name) != trt.DataType.INT32:
                 raise TypeError(f"TensorRT input {name} must have INT32 dtype")
-        if self.engine.get_tensor_dtype(OUTPUT_NAME) != trt.DataType.FLOAT16:
+        if self.engine.get_tensor_dtype(OUTPUT_NAME) != trt.DataType.HALF:
             raise TypeError("TensorRT hidden_states output must have FLOAT16 dtype")
         self.context = self.engine.create_execution_context()
         self.stream = torch.cuda.Stream()
@@ -88,3 +88,4 @@ class TrtRunner:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
+

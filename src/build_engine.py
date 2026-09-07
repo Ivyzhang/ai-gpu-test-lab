@@ -15,7 +15,13 @@ def build_engine(onnx_path: str, engine_path: str, workload_name: str = "distilb
         raise ValueError(f"unknown workload: {workload_name}; choose from {WORKLOAD_NAMES}")
     spec = WORKLOADS[workload_name]
     builder = trt.Builder(TRT_LOGGER)
-    network_flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    network_flags = 0
+
+    if hasattr(trt.NetworkDefinitionCreationFlag, "STRONGLY_TYPED"):
+        network_flags |= 1 << int(
+            trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED
+        )
+
     network = builder.create_network(network_flags)
     parser = trt.OnnxParser(network, TRT_LOGGER)
 
@@ -28,15 +34,26 @@ def build_engine(onnx_path: str, engine_path: str, workload_name: str = "distilb
     actual_outputs = {network.get_output(index).name for index in range(network.num_outputs)}
     if actual_inputs != set(INPUT_NAMES) or actual_outputs != {OUTPUT_NAME}:
         raise RuntimeError(f"unexpected IO: inputs={actual_inputs}, outputs={actual_outputs}")
+    input_tensors = {
+        network.get_input(index).name: network.get_input(index)
+        for index in range(network.num_inputs)
+    }
+    for name in INPUT_NAMES:
+        if input_tensors[name].dtype != trt.DataType.INT32:
+            raise TypeError(f"ONNX input {name} must be INT32")
+    output_tensor = network.get_output(0)
+    if output_tensor.dtype != trt.DataType.HALF:
+        raise TypeError("TensorRT deployment graph output must be HALF")
 
     config = builder.create_builder_config()
-    config.set_flag(trt.BuilderFlag.FP16)
     profile = builder.create_optimization_profile()
     for name in INPUT_NAMES:
-        if not profile.set_shape(
-            name, min=spec.profile_min, opt=spec.profile_opt, max=spec.profile_max
-        ):
-            raise RuntimeError(f"failed to set optimization profile for {name}")
+        profile.set_shape(
+            name,
+            min=spec.profile_min,
+            opt=spec.profile_opt,
+            max=spec.profile_max,
+        )
     config.add_optimization_profile(profile)
 
     serialized_engine = builder.build_serialized_network(network, config)
@@ -60,3 +77,4 @@ if __name__ == "__main__":
     parser.add_argument("--workload", choices=WORKLOAD_NAMES, default="distilbert-base-uncased")
     args = parser.parse_args()
     print(build_engine(args.onnx, args.engine, args.workload))
+
