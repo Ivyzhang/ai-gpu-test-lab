@@ -22,7 +22,7 @@ SUITE_TO_TEST_FILES = {
         "tests/test_operator_boundary.py",
     ],
     "triton": ["tests/test_triton_kernel.py"],
-    "onnx": ["tests/test_onnx_runtime.py"],
+    "onnx": ["tests/test_onnx_runtime.py", "tests/test_onnx_mutations.py"],
     "correctness": ["tests/test_correctness.py"],
     "dynamic": ["tests/test_dynamic_shapes.py"],
     "negative": ["tests/test_negative_cases.py"],
