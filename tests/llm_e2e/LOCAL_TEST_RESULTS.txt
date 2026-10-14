@@ -1,0 +1,56 @@
+short-c1: 4/4, TTFT p95=21.045475999926566
+short-c2: 4/4, TTFT p95=33.90692299944931
+mixed-c1: 4/4, TTFT p95=15.265670001099352
+mixed-c2: 4/4, TTFT p95=15.747895000458811
+test_ipv6_endpoint_is_rejected_even_on_matching_port (test_deployment.DeploymentTests.test_ipv6_endpoint_is_rejected_even_on_matching_port) ... ok
+test_ipv6_manifest_cannot_certify_ipv4_endpoint (test_deployment.DeploymentTests.test_ipv6_manifest_cannot_certify_ipv4_endpoint) ... ok
+test_listener_from_another_process_group_is_rejected (test_deployment.DeploymentTests.test_listener_from_another_process_group_is_rejected) ... ok
+test_live_pid_with_unowned_port_is_rejected (test_deployment.DeploymentTests.test_live_pid_with_unowned_port_is_rejected) ... ok
+test_preflight_manifest_cannot_certify_an_endpoint (test_deployment.DeploymentTests.test_preflight_manifest_cannot_certify_an_endpoint) ... ok
+test_remote_endpoint_is_rejected (test_deployment.DeploymentTests.test_remote_endpoint_is_rejected) ... ok
+test_stopped_manifest_cannot_certify_an_endpoint (test_deployment.DeploymentTests.test_stopped_manifest_cannot_certify_an_endpoint) ... ok
+test_baseline_requires_matching_schema (test_harness.GateTests.test_baseline_requires_matching_schema) ... ok
+test_complete_measurement_can_pass_absolute_sla (test_harness.GateTests.test_complete_measurement_can_pass_absolute_sla) ... ok
+test_environment_mismatch_is_not_comparable (test_harness.GateTests.test_environment_mismatch_is_not_comparable) ... ok
+test_failed_baseline_cannot_authorize_release (test_harness.GateTests.test_failed_baseline_cannot_authorize_release) ... ok
+test_failure_is_in_success_rate_denominator (test_harness.GateTests.test_failure_is_in_success_rate_denominator) ... ok
+test_missing_expected_case_blocks (test_harness.GateTests.test_missing_expected_case_blocks) ... ok
+test_missing_sla_never_passes (test_harness.GateTests.test_missing_sla_never_passes) ... ok
+test_missing_usage_blocks (test_harness.GateTests.test_missing_usage_blocks) ... ok
+test_nan_baseline_success_rate_is_not_comparable (test_harness.GateTests.test_nan_baseline_success_rate_is_not_comparable) ... ok
+test_nan_sla_is_configuration_error (test_harness.GateTests.test_nan_sla_is_configuration_error) ... ok
+test_no_samples_fails_closed (test_harness.GateTests.test_no_samples_fails_closed) ... ok
+test_one_missing_request_latency_cannot_hide_in_percentile (test_harness.GateTests.test_one_missing_request_latency_cannot_hide_in_percentile) ... ok
+test_required_baseline_missing_is_not_comparable (test_harness.GateTests.test_required_baseline_missing_is_not_comparable) ... ok
+test_tail_regression_blocks (test_harness.GateTests.test_tail_regression_blocks) ... ok
+test_tpot_requires_its_own_minimum_samples (test_harness.GateTests.test_tpot_requires_its_own_minimum_samples) ... ok
+test_requests_really_overlap_and_respect_limit (test_harness.ParallelTests.test_requests_really_overlap_and_respect_limit) ... ok
+test_worker_exception_kept_as_failure (test_harness.ParallelTests.test_worker_exception_kept_as_failure) ... ok
+test_empty_response_fails (test_harness.StreamTests.test_empty_response_fails) ... ok
+test_missing_done_is_failure_even_after_finish (test_harness.StreamTests.test_missing_done_is_failure_even_after_finish) ... ok
+test_missing_usage_does_not_invent_tokens (test_harness.StreamTests.test_missing_usage_does_not_invent_tokens) ... ok
+test_multiple_tokens_in_one_chunk_have_no_measurable_tpot (test_harness.StreamTests.test_multiple_tokens_in_one_chunk_have_no_measurable_tpot) ... ok
+test_one_token_has_no_tpot (test_harness.StreamTests.test_one_token_has_no_tpot) ... ok
+test_response_id_switch_rejected (test_harness.StreamTests.test_response_id_switch_rejected) ... ok
+test_role_is_not_first_token_and_chunk_is_not_token (test_harness.StreamTests.test_role_is_not_first_token_and_chunk_is_not_token) ... ok
+test_stream_error_is_not_success (test_harness.StreamTests.test_stream_error_is_not_success) ... ok
+test_client_rejects_dns_hostname_before_request (test_http.HttpTests.test_client_rejects_dns_hostname_before_request) ... ok
+test_deadline_aborts_slow_response (test_http.HttpTests.test_deadline_aborts_slow_response) ... ok
+test_http_rejection_is_preserved (test_http.HttpTests.test_http_rejection_is_preserved) ... ok
+test_missing_usage_remains_missing (test_http.HttpTests.test_missing_usage_remains_missing) ... ok
+test_non_stream_roundtrip_has_no_fake_ttft (test_http.HttpTests.test_non_stream_roundtrip_has_no_fake_ttft) ... ok
+test_sse_roundtrip_reconstructs_text_and_usage (test_http.HttpTests.test_sse_roundtrip_reconstructs_text_and_usage) ... ok
+test_suite_writes_raw_evidence_and_passes_configured_gate (test_http.HttpTests.test_suite_writes_raw_evidence_and_passes_configured_gate) ... ok
+test_truncated_http_stream_is_failure (test_http.HttpTests.test_truncated_http_stream_is_failure) ... ok
+test_wrong_model_identity_blocks_before_benchmark (test_http.HttpTests.test_wrong_model_identity_blocks_before_benchmark) ... ok
+test_constructs_single_gpu_pytorch_backend_command (test_serve.ServeTests.test_constructs_single_gpu_pytorch_backend_command) ... ok
+test_incompatible_installed_cli_rejected (test_serve.ServeTests.test_incompatible_installed_cli_rejected) ... ok
+test_missing_weights_rejected (test_serve.ServeTests.test_missing_weights_rejected) ... ok
+test_occupied_port_fails_before_launch (test_serve.ServeTests.test_occupied_port_fails_before_launch) ... ok
+test_weights_and_tokenizer_changes_change_identity (test_serve.ServeTests.test_weights_and_tokenizer_changes_change_identity) ... ok
+test_wrong_model_type_rejected (test_serve.ServeTests.test_wrong_model_type_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 47 tests in 2.166s
+
+OK
