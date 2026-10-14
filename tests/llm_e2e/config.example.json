@@ -1,0 +1,21 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "served_model_id": null,
+  "request_timeout_s": 90,
+  "readiness_timeout_s": 300,
+  "load": {
+    "scenarios": ["short", "long", "mixed"],
+    "concurrency": [1, 2, 4, 8],
+    "requests_per_case": 32,
+    "warmup_per_case": 2,
+    "max_tokens": 64
+  },
+  "gate": {
+    "min_samples": 32,
+    "min_success_rate": 1.0,
+    "ttft_p95_ms": null,
+    "e2e_p95_ms": null,
+    "tpot_estimate_p95_ms": null,
+    "max_regression_fraction": 0.10
+  }
+}

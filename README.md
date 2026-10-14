@@ -10,7 +10,7 @@ distilbert-base-uncased          open-source Transformer Encoder, hidden=768
 Each workload is tested independently through:
 
 ```text
-PyTorch reference -> ONNX -> ONNX Runtime CPU -> TensorRT FP16 Engine -> GPU gates
+PyTorch reference -> FP32 ONNX/ONNX Runtime -> FP16 ONNX/TensorRT Engine -> GPU gates
 ```
 
 Outputs from the two different models are never compared directly. Cross-workload
@@ -111,7 +111,8 @@ Each run writes:
 reports/<run-id>/summary.json
 reports/<run-id>/junit.xml
 reports/<run-id>/release-summary.md
-reports/<run-id>/artifacts/<workload>.onnx
+  reports/<run-id>/artifacts/<workload>.fp32.onnx
+  reports/<run-id>/artifacts/<workload>.fp16.onnx
 reports/<run-id>/artifacts/<workload>.plan
 ```
 
@@ -123,8 +124,9 @@ with non-overlapping bootstrap intervals is `PERFORMANCE_REVIEW_REQUIRED`.
 
 ## Requirements
 
-- `requirements.txt`: PyTorch, Transformers, ONNX, ONNX Runtime and pytest.
+- `requirements.txt`: Transformers, ONNX, ONNX Runtime and pytest.
 - `requirements-gpu-linux.txt`: Triton and TensorRT for Linux x86_64.
+- `requirements-rtx5090.txt`: PyTorch/Triton versions for an RTX 5090 installation using the CUDA 12.8 PyTorch index.
 - GPU execution requires NVIDIA Container Toolkit and a TensorRT-supported GPU.
 
 The DistilBERT model and tokenizer are loaded from the Hugging Face cache. Production and

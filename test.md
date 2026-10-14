@@ -40,10 +40,12 @@ workload model
     ↓
 PyTorch FP32 reference
     ↓ torch.onnx.export
-ONNX graph + onnx.checker
+FP32 ONNX graph + onnx.checker
     ↓ ONNX Runtime CPU
 ORT numerical reference
-    ↓ TensorRT FP16 builder
+    ↓ one-time FP16 graph conversion
+FP16 ONNX graph + type validation
+    ↓ TensorRT 11 strongly typed builder
 TensorRT Engine
     ↓ execute_async_v3
 GPU output

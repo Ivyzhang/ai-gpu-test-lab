@@ -11,6 +11,7 @@ from onnx import TensorProto
 from onnxconverter_common import float16
 
 from src.contract import INPUT_NAMES, OUTPUT_NAME
+from src.onnx_validation import validate_onnx_io
 from src.workloads import WORKLOADS, WORKLOAD_NAMES
 
 
@@ -156,25 +157,7 @@ def _convert_to_fp16(fp32_path: Path, fp16_path: Path) -> None:
 
 
 def _check_io(graph_path: Path, spec, expected_float_type: int) -> None:
-    graph = onnx.load(str(graph_path))
-    onnx.checker.check_model(graph)
-    input_names = {value.name for value in graph.graph.input}
-    output_names = {value.name for value in graph.graph.output}
-    if input_names != set(INPUT_NAMES) or output_names != {OUTPUT_NAME}:
-        raise RuntimeError(
-            f"unexpected ONNX IO: inputs={input_names}, outputs={output_names}"
-        )
-    for value in graph.graph.input:
-        if value.type.tensor_type.elem_type != TensorProto.INT32:
-            raise RuntimeError(f"{graph_path} input {value.name} must be INT32")
-    output = graph.graph.output[0].type.tensor_type
-    if output.elem_type != expected_float_type:
-        raise RuntimeError(
-            f"{graph_path} output dtype is {output.elem_type}, "
-            f"expected {expected_float_type}"
-        )
-    if output.shape.dim[2].dim_value != spec.hidden:
-        raise RuntimeError(f"{graph_path} output hidden size is not {spec.hidden}")
+    validate_onnx_io(graph_path, spec.hidden, expected_float_type)
 
 
 def export_workload(output_dir: str | Path, workload_name: str) -> dict:
@@ -223,4 +206,3 @@ if __name__ == "__main__":
     parser.add_argument("--workload", choices=WORKLOAD_NAMES, default="distilbert-base-uncased")
     args = parser.parse_args()
     print(export_workload(args.out_dir, args.workload))
-
