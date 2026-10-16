@@ -1,0 +1,9 @@
+test_answer_oracle_rejects_wrong_value_and_unrequested_prose (test_recipes.RecipeTests.test_answer_oracle_rejects_wrong_value_and_unrequested_prose) ... ok
+test_fixture_tasks_are_distinct_and_have_known_answers (test_recipes.RecipeTests.test_fixture_tasks_are_distinct_and_have_known_answers) ... ok
+test_hash_excludes_download_manifest_but_covers_weights_and_tokenizer (test_recipes.RecipeTests.test_hash_excludes_download_manifest_but_covers_weights_and_tokenizer) ... ok
+test_missing_weights_cannot_have_valid_model_hash (test_recipes.RecipeTests.test_missing_weights_cannot_have_valid_model_hash) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.032s
+
+OK

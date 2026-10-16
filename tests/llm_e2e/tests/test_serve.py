@@ -59,8 +59,8 @@ class ServeTests(unittest.TestCase):
             server_command('/bin/vllm', '/model', '127.0.0.1', 8000, help_text)
 
     def test_package_versions_records_vllm(self):
-        with patch('tests.llm_e2e.serve.version', side_effect=lambda name: {'vllm': 'fixture-vllm', 'torch': 'fixture-torch', 'transformers': 'fixture-transformers'}[name]):
-            self.assertEqual(package_versions(), {'vllm': 'fixture-vllm', 'torch': 'fixture-torch', 'transformers': 'fixture-transformers'})
+        with patch('tests.llm_e2e.serve.version', side_effect=lambda name: {'vllm': 'fixture-vllm', 'torch': 'fixture-torch', 'transformers': 'fixture-transformers', 'bitsandbytes': 'fixture-bnb', 'accelerate': 'fixture-accelerate'}[name]):
+            self.assertEqual(package_versions(), {'vllm': 'fixture-vllm', 'torch': 'fixture-torch', 'transformers': 'fixture-transformers', 'bitsandbytes': 'fixture-bnb', 'accelerate': 'fixture-accelerate'})
 
     def test_preflight_uses_vllm_subcommand_and_records_runtime_without_launching(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -97,6 +97,20 @@ class ServeTests(unittest.TestCase):
             self.assertEqual(manifest['versions']['vllm'], 'fixture-vllm')
             self.assertEqual(manifest['command'][:3], ['/bin/vllm', 'serve', str(model.resolve())])
             self.assertEqual(len(commands), 3)
+
+    def test_quantized_loading_requires_both_cli_options(self):
+        with self.assertRaises(ValueError):
+            server_command('/bin/vllm', '/model', '127.0.0.1', 8000, self.HELP,
+                           quantization='bitsandbytes', dtype='half')
+
+    def test_quantized_command_uses_original_weights_and_half_compute(self):
+        cmd = server_command('/bin/vllm', '/model', '127.0.0.1', 8000,
+                             self.HELP + ' --quantization --load-format',
+                             quantization='bitsandbytes', dtype='half')
+        self.assertEqual(cmd[cmd.index('--quantization') + 1], 'bitsandbytes')
+        self.assertEqual(cmd[cmd.index('--load-format') + 1], 'bitsandbytes')
+        self.assertEqual(cmd[cmd.index('--dtype') + 1], 'half')
+        self.assertEqual(cmd[2], '/model')
 
     def test_occupied_port_fails_before_launch(self):
         # Socket binding is an OS boundary; no live port is needed for this unit test.

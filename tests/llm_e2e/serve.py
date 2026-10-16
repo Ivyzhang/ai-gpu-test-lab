@@ -57,23 +57,30 @@ def model_identity(root):
 MODEL_ID = 'Qwen/Qwen2.5-0.5B-Instruct'
 
 
-def server_command(executable, model, host, port, help_text):
+def server_command(executable, model, host, port, help_text, quantization="none", dtype="auto"):
+    if quantization not in ("none", "bitsandbytes") or dtype not in ("auto", "half", "bfloat16"):
+        raise ValueError("unsupported quantization or dtype")
     required = ('--host', '--port', '--max-model-len', '--max-num-seqs',
                 '--tensor-parallel-size', '--served-model-name', '--generation-config',
                 '--dtype', '--gpu-memory-utilization')
+    if quantization == 'bitsandbytes':
+        required += ('--quantization', '--load-format')
     available = set(re.findall(r'--[a-zA-Z][a-zA-Z0-9_-]*', help_text))
     missing = [flag for flag in required if flag not in available]
     if missing:
         raise ValueError('installed vllm serve CLI incompatible; inspect saved cli-help.txt. Missing: ' + ', '.join(missing))
-    return [executable, 'serve', str(model), '--host', host, '--port', str(port),
+    command = [executable, 'serve', str(model), '--host', host, '--port', str(port),
             '--served-model-name', MODEL_ID, '--tensor-parallel-size', '1',
             '--max-model-len', '4096', '--max-num-seqs', '8',
-            '--generation-config', 'vllm', '--dtype', 'auto', '--gpu-memory-utilization', '0.8']
+            '--generation-config', 'vllm', '--dtype', dtype, '--gpu-memory-utilization', '0.8']
+    if quantization == 'bitsandbytes':
+        command += ['--quantization', 'bitsandbytes', '--load-format', 'bitsandbytes']
+    return command
 
 
 def package_versions():
     result = {}
-    for name in ('vllm', 'torch', 'transformers'):
+    for name in ('vllm', 'torch', 'transformers', 'bitsandbytes', 'accelerate'):
         try:
             result[name] = version(name)
         except PackageNotFoundError:
@@ -105,6 +112,8 @@ def main():
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--cuda-device', default='0', help='one physical CUDA device index or GPU UUID')
     parser.add_argument('--preflight-only', action='store_true')
+    parser.add_argument('--quantization', choices=('none', 'bitsandbytes'), default='none', help='bitsandbytes uses runtime 4-bit loading of original weights')
+    parser.add_argument('--dtype', choices=('auto', 'half', 'bfloat16'), default='auto')
     parser.add_argument('--startup-timeout-s', type=float, default=300)
     args = parser.parse_args()
     output = Path(args.output)
@@ -133,7 +142,7 @@ def main():
         (output / 'cli-help.txt').write_text(help_text)
         if help_result.returncode:
             raise RuntimeError('vllm serve --help=all failed; inspect cli-help.txt')
-        command = server_command(executable, model, args.host, args.port, help_text)
+        command = server_command(executable, model, args.host, args.port, help_text, args.quantization, args.dtype)
         gpu = subprocess.run(['nvidia-smi', '-i', args.cuda_device,
                               '--query-gpu=uuid,name,memory.total', '--format=csv,noheader,nounits'],
                              capture_output=True, text=True, timeout=15, check=True).stdout.strip()
@@ -147,7 +156,7 @@ def main():
                     'allowed_model_ids': [MODEL_ID],
                     'versions': dict(package_versions(), python=sys.version, driver=driver),
                     'identity': identity,
-                    'controlled': {'runtime': 'vllm', 'model_hash': identity['model_hash'], 'gpu': gpu,
+                    'controlled': {'runtime': 'vllm', 'quantization': args.quantization, 'dtype': args.dtype, 'model_hash': identity['model_hash'], 'gpu': gpu,
                                    'server_command': command[1:], 'cuda_visible_devices': args.cuda_device,
                                    'cache_policy': 'installed server defaults; warm shared-prefix workload; not cold-cache benchmark'},
                     'command': command,
